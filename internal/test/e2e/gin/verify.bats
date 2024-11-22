@@ -26,12 +26,12 @@ SCOPE="go.opentelemetry.io/auto/net/http"
 
 @test "server :: includes url.path attribute" {
   result=$(server_span_attributes_for ${SCOPE} | jq "select(.key == \"url.path\").value.stringValue")
-  assert_equal "$result" '"/hello-gin"'
+  assert_equal "$result" '"/hello-gin/1"'
 }
 
 @test "client :: includes url.path attribute" {
   result=$(client_span_attributes_for ${SCOPE} | jq "select(.key == \"url.path\").value.stringValue")
-  assert_equal "$result" '"/hello-gin"'
+  assert_equal "$result" '"/hello-gin/1"'
 }
 
 @test "server :: includes http.response.status_code attribute" {
@@ -42,6 +42,11 @@ SCOPE="go.opentelemetry.io/auto/net/http"
 @test "client :: includes http.response.status_code attribute" {
   result=$(client_span_attributes_for ${SCOPE} | jq "select(.key == \"http.response.status_code\").value.intValue")
   assert_equal "$result" '"200"'
+}
+
+@test "server :: includes http.route attribute" {
+  result=$(server_span_attributes_for ${SCOPE} | jq "select(.key == \"http.route\").value.stringValue")
+  assert_equal "$result" '"/hello-gin/:id"'
 }
 
 @test "server :: trace ID present and valid in all spans" {

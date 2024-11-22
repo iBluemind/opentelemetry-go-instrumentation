@@ -14,7 +14,7 @@ import (
 
 func main() {
 	r := gin.Default()
-	r.GET("/hello-gin", func(c *gin.Context) {
+	r.GET("/hello-gin/:id", func(c *gin.Context) {
 		c.String(http.StatusOK, "hello\n")
 	})
 	go func() {
@@ -24,7 +24,7 @@ func main() {
 	// give time for auto-instrumentation to start up
 	time.Sleep(5 * time.Second)
 
-	resp, err := http.Get("http://localhost:8080/hello-gin")
+	resp, err := http.Get("http://localhost:8080/hello-gin/1")
 	if err != nil {
 		log.Fatal(err)
 	}
