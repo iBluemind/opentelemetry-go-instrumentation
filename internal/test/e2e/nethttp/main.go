@@ -16,9 +16,11 @@ func hello(w http.ResponseWriter, _ *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/hello/{id}", hello)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hello/{id}", hello)
+
 	go func() {
-		_ = http.ListenAndServe(":8080", nil)
+		_ = http.ListenAndServe(":8080", mux)
 	}()
 
 	// give time for auto-instrumentation to start up
