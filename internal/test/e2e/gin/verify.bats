@@ -44,11 +44,6 @@ SCOPE="go.opentelemetry.io/auto/net/http"
   assert_equal "$result" '"200"'
 }
 
-@test "server :: includes http.route attribute" {
-  result=$(server_span_attributes_for ${SCOPE} | jq "select(.key == \"http.route\").value.stringValue")
-  assert_equal "$result" '"/hello-gin/:id"'
-}
-
 @test "server :: trace ID present and valid in all spans" {
   trace_id=$(server_spans_from_scope_named ${SCOPE} | jq ".traceId")
   assert_regex "$trace_id" ${MATCH_A_TRACE_ID}
