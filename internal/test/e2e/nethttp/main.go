@@ -17,7 +17,7 @@ func hello(w http.ResponseWriter, _ *http.Request) {
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/hello/{id}", hello)
+	mux.HandleFunc("GET /hello/{id}", hello)
 
 	go func() {
 		_ = http.ListenAndServe(":8080", mux)
