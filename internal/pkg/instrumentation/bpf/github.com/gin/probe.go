@@ -61,12 +61,21 @@ func New(logger *slog.Logger) probe.Probe {
 				Key: "path_ptr_pos",
 				Val: structfield.NewID("std", "net/url", "URL", "Path"),
 			},
+			probe.StructFieldConst{
+				Key: "fullpath_str_pos",
+				Val: structfield.NewID("github.com/gin-gonic/gin", "github.com/gin-gonic/gin", "Context", "fullPath"),
+			},
 		},
 		Uprobes: []probe.Uprobe{
 			{
 				Sym:         "github.com/gin-gonic/gin.(*Engine).ServeHTTP",
 				EntryProbe:  "uprobe_GinEngine_ServeHTTP",
 				ReturnProbe: "uprobe_GinEngine_ServeHTTP_Returns",
+			},
+			{
+				Sym:         "github.com/gin-gonic/gin.(*Engine).handleHTTPRequest",
+				EntryProbe:  "uprobe_GinEngine_handleHTTPRequest",
+				ReturnProbe: "uprobe_GinEngine_handleHTTPRequest_Returns",
 			},
 		},
 		SpecFn:    loadBpf,
@@ -78,13 +87,24 @@ func New(logger *slog.Logger) probe.Probe {
 // request-response.
 type event struct {
 	context.BaseSpanProperties
-	Method [8]byte
-	Path   [128]byte
+	Method      [8]byte
+	Path        [128]byte
+	PathPattern [128]byte
 }
 
 func convertEvent(e *event) []*probe.SpanEvent {
 	method := unix.ByteSliceToString(e.Method[:])
 	path := unix.ByteSliceToString(e.Path[:])
+	patternPath := unix.ByteSliceToString(e.PathPattern[:])
+
+	attributes := []attribute.KeyValue{
+		semconv.HTTPRequestMethodKey.String(method),
+		semconv.URLPath(path),
+	}
+
+	if patternPath != "" {
+		attributes = append(attributes, semconv.HTTPRouteKey.String(patternPath))
+	}
 
 	sc := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    e.SpanContext.TraceID,
@@ -109,14 +129,11 @@ func convertEvent(e *event) []*probe.SpanEvent {
 		// Do not include the high-cardinality path here (there is no
 		// templatized path manifest to reference, given we are instrumenting
 		// Engine.ServeHTTP which is not passed a Gin Context).
-		SpanName:    method,
-		StartTime:   utils.BootOffsetToTime(e.StartTime),
-		EndTime:     utils.BootOffsetToTime(e.EndTime),
-		SpanContext: &sc,
-		Attributes: []attribute.KeyValue{
-			semconv.HTTPRequestMethodKey.String(method),
-			semconv.URLPath(path),
-		},
+		SpanName:          method,
+		StartTime:         utils.BootOffsetToTime(e.StartTime),
+		EndTime:           utils.BootOffsetToTime(e.EndTime),
+		SpanContext:       &sc,
+		Attributes:        attributes,
 		ParentSpanContext: pscPtr,
 	}
 

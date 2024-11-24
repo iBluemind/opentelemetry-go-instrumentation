@@ -2,7 +2,7 @@
 
 load ../../test_helpers/utilities.sh
 
-SCOPE="go.opentelemetry.io/auto/net/http"
+SCOPE="go.opentelemetry.io/auto/github.com/gin-gonic/gin"
 
 @test "go-auto :: includes service.name in resource attributes" {
   result=$(resource_attributes_received | jq "select(.key == \"service.name\").value.stringValue")

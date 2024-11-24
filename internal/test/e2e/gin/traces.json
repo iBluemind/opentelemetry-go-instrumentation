@@ -68,6 +68,12 @@
                   "value": {
                     "stringValue": "/hello-gin/1"
                   }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/hello-gin/:id"
+                  }
                 }
               ],
               "flags": 768,

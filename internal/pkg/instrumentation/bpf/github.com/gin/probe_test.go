@@ -61,6 +61,8 @@ func TestProbeConvertEvent(t *testing.T) {
 				Method: [8]byte{0x47, 0x45, 0x54},
 				// "/foo/bar"
 				Path: [128]byte{0x2f, 0x66, 0x6f, 0x6f, 0x2f, 0x62, 0x61, 0x72},
+				// "/foo/bar"
+				PathPattern: [128]byte{0x2f, 0x66, 0x6f, 0x6f, 0x2f, 0x62, 0x61, 0x72},
 			},
 			expected: []*probe.SpanEvent{
 				{
@@ -71,6 +73,7 @@ func TestProbeConvertEvent(t *testing.T) {
 					Attributes: []attribute.KeyValue{
 						semconv.HTTPRequestMethodKey.String("GET"),
 						semconv.URLPath("/foo/bar"),
+						semconv.HTTPRouteKey.String("/foo/bar"),
 					},
 				},
 			},

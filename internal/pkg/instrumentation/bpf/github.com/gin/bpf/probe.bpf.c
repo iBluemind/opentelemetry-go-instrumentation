@@ -29,6 +29,7 @@ struct http_request_t {
     BASE_SPAN_PROPERTIES
     char method[METHOD_MAX_LEN];
     char path[PATH_MAX_LEN];
+    char path_pattern[PATH_MAX_LEN];
 };
 
 struct {
@@ -51,6 +52,7 @@ volatile const u64 method_ptr_pos;
 volatile const u64 url_ptr_pos;
 volatile const u64 path_ptr_pos;
 volatile const u64 ctx_ptr_pos;
+volatile const u64 fullpath_str_pos;
 
 // This instrumentation attaches uprobe to the following function:
 // func (engine *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request)
@@ -63,36 +65,22 @@ int uprobe_GinEngine_ServeHTTP(struct pt_regs *ctx) {
     get_Go_context(ctx, 4, ctx_ptr_pos, false, &go_context);
 
     void *key = get_consistent_key(ctx, go_context.data);
-    void *httpReq_ptr = bpf_map_lookup_elem(&http_events, &key);
-    if (httpReq_ptr != NULL)
-    {
-        bpf_printk("uprobe/GinEngine_ServeHTTP already tracked with the current context");
-        return 0;
-    }
 
-    u32 map_id = 0;
-    struct http_request_t *httpReq = bpf_map_lookup_elem(&gin_uprobe_storage_map, &map_id);
-    if (httpReq == NULL)
-    {
-        bpf_printk("uprobe/GinEngine_ServeHTTP: httpReq is NULL");
-        return 0;
-    }
-
-    __builtin_memset(httpReq, 0, sizeof(struct http_request_t));
-    httpReq->start_time = bpf_ktime_get_ns();
+    struct http_request_t http_request = {0};
+    http_request.start_time = bpf_ktime_get_ns();
 
     start_span_params_t start_span_params = {
         .ctx = ctx,
         .go_context = &go_context,
-        .psc = &httpReq->psc,
-        .sc = &httpReq->sc,
+        .psc = &http_request.psc,
+        .sc = &http_request.sc,
         .get_parent_span_context_fn = NULL,
         .get_parent_span_context_arg = NULL,
     };
     start_span(&start_span_params);
 
     // Get method from request
-    if (!get_go_string_from_user_ptr((void *)(req_ptr + method_ptr_pos), httpReq->method, sizeof(httpReq->method))) {
+    if (!get_go_string_from_user_ptr((void *)(req_ptr + method_ptr_pos), http_request.method, sizeof(http_request.method))) {
         bpf_printk("failed to get method from request");
         return 0;
     }
@@ -100,13 +88,50 @@ int uprobe_GinEngine_ServeHTTP(struct pt_regs *ctx) {
     // get path from Request.URL
     void *url_ptr = 0;
     bpf_probe_read(&url_ptr, sizeof(url_ptr), (void *)(req_ptr + url_ptr_pos));
-    if (!get_go_string_from_user_ptr((void *)(url_ptr + path_ptr_pos), httpReq->path, sizeof(httpReq->path))) {
+    if (!get_go_string_from_user_ptr((void *)(url_ptr + path_ptr_pos), http_request.path, sizeof(http_request.path))) {
         bpf_printk("failed to get path from Request.URL");
         return 0;
     }
 
-    bpf_map_update_elem(&http_events, &key, httpReq, 0);
+    bpf_map_update_elem(&http_events, &key, &http_request, 0);
     return 0;
 }
 
 UPROBE_RETURN(GinEngine_ServeHTTP, struct http_request_t, http_events, events, 4, ctx_ptr_pos, false)
+
+// This instrumentation attaches uprobe to the following function:
+// func (engine *Engine) handleHTTPRequest(c *Context)
+SEC("uprobe/GinEngine_handleHTTPRequest")
+int uprobe_GinEngine_handleHTTPRequest(struct pt_regs *ctx) {
+    u64 gin_ctx_pos = 2;
+    void *gin_ctx_ptr = get_argument(ctx, gin_ctx_pos);
+
+    struct go_iface go_context = {0};
+    get_Go_context(ctx, gin_ctx_pos, ctx_ptr_pos, false, &go_context);
+
+    void *key = get_consistent_key(ctx, go_context.data);
+
+    struct http_request_t http_request = {0};
+    http_request.start_time = bpf_ktime_get_ns();
+
+    start_span_params_t start_span_params = {
+        .ctx = ctx,
+        .go_context = &go_context,
+        .psc = &http_request.psc,
+        .sc = &http_request.sc,
+        .get_parent_span_context_fn = NULL,
+        .get_parent_span_context_arg = NULL,
+    };
+    start_span(&start_span_params);
+
+    // get pathPattern
+    if (!get_go_string_from_user_ptr((void *)(gin_ctx_ptr + fullpath_str_pos), http_request.path_pattern, sizeof(http_request.path_pattern))) {
+        bpf_printk("failed to get path_pattern from gin context");
+        return 0;
+    }
+
+    bpf_map_update_elem(&http_events, &key, &http_request, 0);
+    return 0;
+}
+
+UPROBE_RETURN(GinEngine_handleHTTPRequest, struct http_request_t, http_events, events, 2, ctx_ptr_pos, false)

@@ -13,12 +13,13 @@ import (
 )
 
 type bpfHttpRequestT struct {
-	StartTime uint64
-	EndTime   uint64
-	Sc        bpfSpanContext
-	Psc       bpfSpanContext
-	Method    [8]int8
-	Path      [128]int8
+	StartTime   uint64
+	EndTime     uint64
+	Sc          bpfSpanContext
+	Psc         bpfSpanContext
+	Method      [8]int8
+	Path        [128]int8
+	PathPattern [128]int8
 }
 
 type bpfSliceArrayBuff struct{ Buff [1024]uint8 }
@@ -71,8 +72,10 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
-	UprobeGinEngineServeHTTP         *ebpf.ProgramSpec `ebpf:"uprobe_GinEngine_ServeHTTP"`
-	UprobeGinEngineServeHTTP_Returns *ebpf.ProgramSpec `ebpf:"uprobe_GinEngine_ServeHTTP_Returns"`
+	UprobeGinEngineServeHTTP                *ebpf.ProgramSpec `ebpf:"uprobe_GinEngine_ServeHTTP"`
+	UprobeGinEngineServeHTTP_Returns        *ebpf.ProgramSpec `ebpf:"uprobe_GinEngine_ServeHTTP_Returns"`
+	UprobeGinEngineHandleHTTPRequest        *ebpf.ProgramSpec `ebpf:"uprobe_GinEngine_handleHTTPRequest"`
+	UprobeGinEngineHandleHTTPRequestReturns *ebpf.ProgramSpec `ebpf:"uprobe_GinEngine_handleHTTPRequest_Returns"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
@@ -138,14 +141,18 @@ func (m *bpfMaps) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
-	UprobeGinEngineServeHTTP         *ebpf.Program `ebpf:"uprobe_GinEngine_ServeHTTP"`
-	UprobeGinEngineServeHTTP_Returns *ebpf.Program `ebpf:"uprobe_GinEngine_ServeHTTP_Returns"`
+	UprobeGinEngineServeHTTP                *ebpf.Program `ebpf:"uprobe_GinEngine_ServeHTTP"`
+	UprobeGinEngineServeHTTP_Returns        *ebpf.Program `ebpf:"uprobe_GinEngine_ServeHTTP_Returns"`
+	UprobeGinEngineHandleHTTPRequest        *ebpf.Program `ebpf:"uprobe_GinEngine_handleHTTPRequest"`
+	UprobeGinEngineHandleHTTPRequestReturns *ebpf.Program `ebpf:"uprobe_GinEngine_handleHTTPRequest_Returns"`
 }
 
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
 		p.UprobeGinEngineServeHTTP,
 		p.UprobeGinEngineServeHTTP_Returns,
+		p.UprobeGinEngineHandleHTTPRequest,
+		p.UprobeGinEngineHandleHTTPRequestReturns,
 	)
 }
 
