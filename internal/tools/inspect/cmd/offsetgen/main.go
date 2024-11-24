@@ -75,6 +75,11 @@ func manifests() ([]inspect.Manifest, error) {
 		return nil, fmt.Errorf("failed to get \"github.com/segmentio/kafka-go\" versions: %w", err)
 	}
 
+	chiVers, err := PkgVersions("github.com/go-chi/chi/v5")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get \"github.com/go-chi/chi/v5\" versions: %w", err)
+	}
+
 	ren := func(src string) inspect.Renderer {
 		return inspect.NewRenderer(logger, src, inspect.DefaultFS)
 	}
@@ -123,6 +128,15 @@ func manifests() ([]inspect.Manifest, error) {
 				structfield.NewID("std", "net/url", "Userinfo", "username"),
 				structfield.NewID("std", "bufio", "Writer", "buf"),
 				structfield.NewID("std", "bufio", "Writer", "n"),
+			},
+		},
+		{
+			Application: inspect.Application{
+				Renderer:  ren("templates/context/*.tmpl"),
+				GoVerions: goVers,
+			},
+			StructFields: []structfield.ID{
+				structfield.NewID("std", "context", "Context", "val"),
 			},
 		},
 		{
@@ -184,6 +198,15 @@ func manifests() ([]inspect.Manifest, error) {
 				structfield.NewID("github.com/segmentio/kafka-go", "github.com/segmentio/kafka-go", "Reader", "config"),
 				structfield.NewID("github.com/segmentio/kafka-go", "github.com/segmentio/kafka-go", "ReaderConfig", "GroupID"),
 				structfield.NewID("github.com/segmentio/kafka-go", "github.com/segmentio/kafka-go", "Conn", "clientID"),
+			},
+		},
+		{
+			Application: inspect.Application{
+				Renderer: ren("templates/github.com/go-chi/chi/v5/*.tmpl"),
+				Versions: chiVers,
+			},
+			StructFields: []structfield.ID{
+				structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "routePattern"),
 			},
 		},
 	}, nil
