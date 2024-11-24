@@ -197,6 +197,7 @@ func manifests() ([]inspect.Manifest, error) {
 				Versions: ginVers,
 			},
 			StructFields: []structfield.ID{
+				structfield.NewID("github.com/gin-gonic/gin", "github.com/gin-gonic/gin", "Context", "Request"),
 				structfield.NewID("github.com/gin-gonic/gin", "github.com/gin-gonic/gin", "Context", "fullPath"),
 			},
 		},

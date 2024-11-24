@@ -12,16 +12,6 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type bpfHttpRequestT struct {
-	StartTime   uint64
-	EndTime     uint64
-	Sc          bpfSpanContext
-	Psc         bpfSpanContext
-	Method      [8]int8
-	Path        [128]int8
-	PathPattern [128]int8
-}
-
 type bpfSliceArrayBuff struct{ Buff [1024]uint8 }
 
 type bpfSpanContext struct {
@@ -29,6 +19,19 @@ type bpfSpanContext struct {
 	SpanID     [8]uint8
 	TraceFlags uint8
 	Padding    [7]uint8
+}
+
+type bpfUprobeDataT struct {
+	Req struct {
+		StartTime   uint64
+		EndTime     uint64
+		Sc          bpfSpanContext
+		Psc         bpfSpanContext
+		Method      [8]int8
+		Path        [128]int8
+		PathPattern [128]int8
+	}
+	GinCtxPtr uint64
 }
 
 // loadBpf returns the embedded CollectionSpec for bpf.

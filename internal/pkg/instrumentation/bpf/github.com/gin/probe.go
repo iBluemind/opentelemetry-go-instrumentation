@@ -62,16 +62,15 @@ func New(logger *slog.Logger) probe.Probe {
 				Val: structfield.NewID("std", "net/url", "URL", "Path"),
 			},
 			probe.StructFieldConst{
+				Key: "req_ptr_pos",
+				Val: structfield.NewID("github.com/gin-gonic/gin", "github.com/gin-gonic/gin", "Context", "Request"),
+			},
+			probe.StructFieldConst{
 				Key: "fullpath_str_pos",
 				Val: structfield.NewID("github.com/gin-gonic/gin", "github.com/gin-gonic/gin", "Context", "fullPath"),
 			},
 		},
 		Uprobes: []probe.Uprobe{
-			{
-				Sym:         "github.com/gin-gonic/gin.(*Engine).ServeHTTP",
-				EntryProbe:  "uprobe_GinEngine_ServeHTTP",
-				ReturnProbe: "uprobe_GinEngine_ServeHTTP_Returns",
-			},
 			{
 				Sym:         "github.com/gin-gonic/gin.(*Engine).handleHTTPRequest",
 				EntryProbe:  "uprobe_GinEngine_handleHTTPRequest",
