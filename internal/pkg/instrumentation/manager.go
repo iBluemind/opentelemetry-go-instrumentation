@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/auto/internal/pkg/instrumentation/bpf/github.com/go-chi/chi/v5"
 	"log/slog"
 	"sync"
 
@@ -371,6 +372,7 @@ func availableProbes(l *slog.Logger, withTraceGlobal bool) []probe.Probe {
 		kafkaProducer.New(l),
 		kafkaConsumer.New(l),
 		autosdk.New(l),
+		chi.New(l),
 	}
 
 	if withTraceGlobal {
