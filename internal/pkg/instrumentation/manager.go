@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/auto/internal/pkg/instrumentation/bpf/github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/auto/internal/pkg/instrumentation/bpf/github.com/chi"
 	"log/slog"
 	"sync"
 
