@@ -76,6 +76,11 @@ func New(logger *slog.Logger) probe.Probe {
 				EntryProbe:  "uprobe_chi_Mux_routeHTTP",
 				ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
 			},
+			{
+				Sym:         "net/http.HandlerFunc.ServeHTTP",
+				EntryProbe:  "uprobe_chi_Mux_routeHTTP",
+				ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
+			},
 		},
 		SpecFn:    loadBpf,
 		ProcessFn: convertEvent,
