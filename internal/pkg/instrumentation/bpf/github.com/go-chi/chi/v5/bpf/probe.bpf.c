@@ -143,7 +143,7 @@ int uprobe_chi_Mux_routeHTTP_Returns(struct pt_regs *ctx) {
     void *val_ptr = 0;
     bpf_probe_read(&val_ptr, sizeof(val_ptr), (void *)(ctx_ptr + val_ptr_pos));
     if (!get_go_string_from_user_ptr((void *)(val_ptr + routepattern_str_pos), http_request->path_pattern, sizeof(http_request->path_pattern))) {
-        bpf_printk("failed to get path_pattern from gin context");
+        bpf_printk("failed to get path_pattern from chi context");
         return 0;
     }
 

@@ -66,7 +66,7 @@ func New(logger *slog.Logger) probe.Probe {
 				Val: structfield.NewID("std", "context", "valueCtx", "val"),
 			},
 			probe.StructFieldConst{
-				Key: "fullpath_str_pos",
+				Key: "routepattern_str_pos",
 				Val: structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "routePattern"),
 			},
 		},
