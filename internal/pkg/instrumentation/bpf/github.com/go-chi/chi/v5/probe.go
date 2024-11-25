@@ -63,7 +63,7 @@ func New(logger *slog.Logger) probe.Probe {
 			},
 			probe.StructFieldConst{
 				Key: "val_ptr_pos",
-				Val: structfield.NewID("std", "context", "Context", "val"),
+				Val: structfield.NewID("std", "context", "valueCtx", "val"),
 			},
 			probe.StructFieldConst{
 				Key: "fullpath_str_pos",

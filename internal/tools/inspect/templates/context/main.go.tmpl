@@ -1,7 +1,13 @@
 package main
 
 import (
-	_ "context"
+    "context"
+    "fmt"
 )
 
-func main() {}
+func main() {
+    ctx := context.WithValue(context.TODO(), "test-key", "test-val")
+    val := ctx.Value("test-key")
+
+    fmt.Println(val)
+}

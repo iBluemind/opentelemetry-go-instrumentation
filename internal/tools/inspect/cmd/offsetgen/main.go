@@ -136,7 +136,7 @@ func manifests() ([]inspect.Manifest, error) {
 				GoVerions: goVers,
 			},
 			StructFields: []structfield.ID{
-				structfield.NewID("std", "context", "Context", "val"),
+				structfield.NewID("std", "context", "valueCtx", "val"),
 			},
 		},
 		{
