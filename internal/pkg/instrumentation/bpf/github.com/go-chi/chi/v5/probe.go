@@ -66,7 +66,7 @@ func New(logger *slog.Logger) probe.Probe {
 				Val: structfield.NewID("std", "context", "valueCtx", "val"),
 			},
 			probe.StructFieldConst{
-				Key: "routepattern_str_pos",
+				Key: "rp_str_pos",
 				Val: structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "routePattern"),
 			},
 		},
@@ -82,7 +82,7 @@ func New(logger *slog.Logger) probe.Probe {
 	}
 }
 
-// event represents an event in the gin-gonic/gin server during an HTTP
+// event represents an event in the chi server during an HTTP
 // request-response.
 type event struct {
 	context.BaseSpanProperties
@@ -125,9 +125,6 @@ func convertEvent(e *event) []*probe.SpanEvent {
 	}
 
 	spanEvent := &probe.SpanEvent{
-		// Do not include the high-cardinality path here (there is no
-		// templatized path manifest to reference, given we are instrumenting
-		// Engine.ServeHTTP which is not passed a Gin Context).
 		SpanName:          method,
 		StartTime:         utils.BootOffsetToTime(e.StartTime),
 		EndTime:           utils.BootOffsetToTime(e.EndTime),

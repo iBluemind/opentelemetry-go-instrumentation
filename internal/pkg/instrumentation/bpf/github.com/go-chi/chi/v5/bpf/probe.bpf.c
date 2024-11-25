@@ -59,7 +59,7 @@ volatile const u64 url_ptr_pos;
 volatile const u64 path_ptr_pos;
 volatile const u64 ctx_ptr_pos;
 volatile const u64 val_ptr_pos;
-volatile const u64 routepattern_str_pos;
+volatile const u64 rp_str_pos;
 
 // This instrumentation attaches uprobe to the following function:
 // func (mx *Mux) routeHTTP(w http.ResponseWriter, r *http.Request)
@@ -142,7 +142,7 @@ int uprobe_chi_Mux_routeHTTP_Returns(struct pt_regs *ctx) {
     bpf_probe_read(&ctx_ptr, sizeof(ctx_ptr), (void *)(req_ptr + ctx_ptr_pos));
     void *val_ptr = 0;
     bpf_probe_read(&val_ptr, sizeof(val_ptr), (void *)(ctx_ptr + val_ptr_pos));
-    if (!get_go_string_from_user_ptr((void *)(val_ptr + routepattern_str_pos), http_request->path_pattern, sizeof(http_request->path_pattern))) {
+    if (!get_go_string_from_user_ptr((void *)(val_ptr + rp_str_pos), http_request->path_pattern, sizeof(http_request->path_pattern))) {
         bpf_printk("failed to get path_pattern from chi context");
         return 0;
     }
