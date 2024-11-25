@@ -147,7 +147,7 @@ int uprobe_chi_Mux_routeHTTP_Returns(struct pt_regs *ctx) {
         return 0;
     }
 
-    bpf_map_update_elem(&http_events, &key, http_request, 0);
+    bpf_map_update_elem(&http_events, &key, uprobe_data, 0);
 
     output_span_event(ctx, http_request, sizeof(*http_request), &http_request->sc);
 
