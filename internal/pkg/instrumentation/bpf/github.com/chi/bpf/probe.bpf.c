@@ -15,6 +15,7 @@
 #include "arguments.h"
 #include "trace/span_context.h"
 #include "go_context.h"
+#include "go_types.h"
 #include "uprobe.h"
 #include "trace/span_output.h"
 #include "trace/start_span.h"
