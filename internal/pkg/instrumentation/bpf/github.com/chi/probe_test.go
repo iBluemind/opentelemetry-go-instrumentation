@@ -16,16 +16,16 @@ package chi
 
 import (
 	"go.opentelemetry.io/auto/internal/pkg/instrumentation/utils"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/auto/internal/pkg/instrumentation/context"
-	"go.opentelemetry.io/auto/internal/pkg/instrumentation/probe"
 )
 
 func TestProbeConvertEvent(t *testing.T) {
@@ -38,16 +38,10 @@ func TestProbeConvertEvent(t *testing.T) {
 	traceID := trace.TraceID{1}
 	spanID := trace.SpanID{1}
 
-	sc := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    traceID,
-		SpanID:     spanID,
-		TraceFlags: trace.FlagsSampled,
-	})
-
 	testCases := []struct {
 		name     string
 		event    *event
-		expected []*probe.SpanEvent
+		expected ptrace.SpanSlice
 	}{
 		{
 			name: "basic client event",
@@ -64,25 +58,31 @@ func TestProbeConvertEvent(t *testing.T) {
 				// "/foo/bar"
 				PathPattern: [128]byte{0x2f, 0x66, 0x6f, 0x6f, 0x2f, 0x62, 0x61, 0x72},
 			},
-			expected: []*probe.SpanEvent{
-				{
-					SpanName:    "GET",
-					StartTime:   startTime,
-					EndTime:     endTime,
-					SpanContext: &sc,
-					Attributes: []attribute.KeyValue{
-						semconv.HTTPRequestMethodKey.String("GET"),
-						semconv.URLPath("/foo/bar"),
-						semconv.HTTPRouteKey.String("/foo/bar"),
-					},
-				},
-			},
+			expected: func() ptrace.SpanSlice {
+				spans := ptrace.NewSpanSlice()
+				span := spans.AppendEmpty()
+				span.SetName("GET")
+				span.SetKind(ptrace.SpanKindServer)
+				span.SetStartTimestamp(utils.BootOffsetToTimestamp(startTimeOffset))
+				span.SetEndTimestamp(utils.BootOffsetToTimestamp(endTimeOffset))
+				span.SetTraceID(pcommon.TraceID(traceID))
+				span.SetSpanID(pcommon.SpanID(spanID))
+				span.SetFlags(uint32(trace.FlagsSampled))
+				utils.Attributes(
+					span.Attributes(),
+					semconv.HTTPRequestMethodKey.String("GET"),
+					semconv.URLPath("/foo/bar"),
+					semconv.HTTPRouteKey.String("/foo/bar"),
+				)
+
+				return spans
+			}(),
 		},
 	}
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			out := convertEvent(tt.event)
+			out := processFn(tt.event)
 			assert.Equal(t, tt.expected, out)
 		})
 	}

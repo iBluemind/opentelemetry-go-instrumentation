@@ -16,6 +16,8 @@ package chi
 
 import (
 	"go.opentelemetry.io/auto/internal/pkg/instrumentation/utils"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
@@ -27,7 +29,7 @@ import (
 	"go.opentelemetry.io/auto/internal/pkg/structfield"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64,arm64 -cc clang -cflags $CFLAGS bpf ./bpf/probe.bpf.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64,arm64 bpf ./bpf/probe.bpf.c
 
 const (
 	// pkg is the package being instrumented.
@@ -35,55 +37,59 @@ const (
 )
 
 // New returns a new [probe.Probe].
-func New(logger *slog.Logger) probe.Probe {
+func New(logger *slog.Logger, version string) probe.Probe {
 	id := probe.ID{
 		SpanKind:        trace.SpanKindServer,
 		InstrumentedPkg: pkg,
 	}
-	return &probe.Base[bpfObjects, event]{
-		ID:     id,
-		Logger: logger,
-		Consts: []probe.Const{
-			probe.RegistersABIConst{},
-			probe.StructFieldConst{
-				Key: "method_ptr_pos",
-				Val: structfield.NewID("std", "net/http", "Request", "Method"),
+	return &probe.SpanProducer[bpfObjects, event]{
+		Base: probe.Base[bpfObjects, event]{
+			ID:     id,
+			Logger: logger,
+			Consts: []probe.Const{
+				probe.RegistersABIConst{},
+				probe.StructFieldConst{
+					Key: "method_ptr_pos",
+					Val: structfield.NewID("std", "net/http", "Request", "Method"),
+				},
+				probe.StructFieldConst{
+					Key: "url_ptr_pos",
+					Val: structfield.NewID("std", "net/http", "Request", "URL"),
+				},
+				probe.StructFieldConst{
+					Key: "ctx_ptr_pos",
+					Val: structfield.NewID("std", "net/http", "Request", "ctx"),
+				},
+				probe.StructFieldConst{
+					Key: "path_ptr_pos",
+					Val: structfield.NewID("std", "net/url", "URL", "Path"),
+				},
+				probe.StructFieldConst{
+					Key: "val_ptr_pos",
+					Val: structfield.NewID("std", "context", "valueCtx", "val"),
+				},
+				probe.StructFieldConst{
+					Key: "rp_str_pos",
+					Val: structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "routePattern"),
+				},
 			},
-			probe.StructFieldConst{
-				Key: "url_ptr_pos",
-				Val: structfield.NewID("std", "net/http", "Request", "URL"),
+			Uprobes: []probe.Uprobe{
+				{
+					Sym:         "github.com/go-chi/chi/v5.(*Mux).routeHTTP",
+					EntryProbe:  "uprobe_chi_Mux_routeHTTP",
+					ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
+				},
+				{
+					Sym:         "net/http.HandlerFunc.ServeHTTP",
+					EntryProbe:  "uprobe_chi_Mux_routeHTTP",
+					ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
+				},
 			},
-			probe.StructFieldConst{
-				Key: "ctx_ptr_pos",
-				Val: structfield.NewID("std", "net/http", "Request", "ctx"),
-			},
-			probe.StructFieldConst{
-				Key: "path_ptr_pos",
-				Val: structfield.NewID("std", "net/url", "URL", "Path"),
-			},
-			probe.StructFieldConst{
-				Key: "val_ptr_pos",
-				Val: structfield.NewID("std", "context", "valueCtx", "val"),
-			},
-			probe.StructFieldConst{
-				Key: "rp_str_pos",
-				Val: structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "routePattern"),
-			},
+			SpecFn: loadBpf,
 		},
-		Uprobes: []probe.Uprobe{
-			{
-				Sym:         "github.com/go-chi/chi/v5.(*Mux).routeHTTP",
-				EntryProbe:  "uprobe_chi_Mux_routeHTTP",
-				ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
-			},
-			{
-				Sym:         "net/http.HandlerFunc.ServeHTTP",
-				EntryProbe:  "uprobe_chi_Mux_routeHTTP",
-				ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
-			},
-		},
-		SpecFn:    loadBpf,
-		ProcessFn: convertEvent,
+		Version:   version,
+		SchemaURL: semconv.SchemaURL,
+		ProcessFn: processFn,
 	}
 }
 
@@ -96,7 +102,7 @@ type event struct {
 	PathPattern [128]byte
 }
 
-func convertEvent(e *event) []*probe.SpanEvent {
+func processFn(e *event) ptrace.SpanSlice {
 	method := unix.ByteSliceToString(e.Method[:])
 	path := unix.ByteSliceToString(e.Path[:])
 	patternPath := unix.ByteSliceToString(e.PathPattern[:])
@@ -110,33 +116,21 @@ func convertEvent(e *event) []*probe.SpanEvent {
 		attributes = append(attributes, semconv.HTTPRouteKey.String(patternPath))
 	}
 
-	sc := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    e.SpanContext.TraceID,
-		SpanID:     e.SpanContext.SpanID,
-		TraceFlags: trace.FlagsSampled,
-	})
+	spans := ptrace.NewSpanSlice()
+	span := spans.AppendEmpty()
+	span.SetName(method)
+	span.SetKind(ptrace.SpanKindServer)
+	span.SetStartTimestamp(utils.BootOffsetToTimestamp(e.StartTime))
+	span.SetEndTimestamp(utils.BootOffsetToTimestamp(e.EndTime))
+	span.SetTraceID(pcommon.TraceID(e.SpanContext.TraceID))
+	span.SetSpanID(pcommon.SpanID(e.SpanContext.SpanID))
+	span.SetFlags(uint32(trace.FlagsSampled))
 
-	var pscPtr *trace.SpanContext
-	if e.ParentSpanContext.TraceID.IsValid() {
-		psc := trace.NewSpanContext(trace.SpanContextConfig{
-			TraceID:    e.ParentSpanContext.TraceID,
-			SpanID:     e.ParentSpanContext.SpanID,
-			TraceFlags: trace.FlagsSampled,
-			Remote:     true,
-		})
-		pscPtr = &psc
-	} else {
-		pscPtr = nil
+	if e.ParentSpanContext.SpanID.IsValid() {
+		span.SetParentSpanID(pcommon.SpanID(e.ParentSpanContext.SpanID))
 	}
 
-	spanEvent := &probe.SpanEvent{
-		SpanName:          method,
-		StartTime:         utils.BootOffsetToTime(e.StartTime),
-		EndTime:           utils.BootOffsetToTime(e.EndTime),
-		SpanContext:       &sc,
-		Attributes:        attributes,
-		ParentSpanContext: pscPtr,
-	}
+	utils.Attributes(span.Attributes(), attributes...)
 
-	return []*probe.SpanEvent{spanEvent}
+	return spans
 }

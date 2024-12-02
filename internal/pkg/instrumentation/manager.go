@@ -421,7 +421,7 @@ func (m *Manager) availableProbes() []probe.Probe {
 		kafkaProducer.New(m.logger, m.version),
 		kafkaConsumer.New(m.logger, m.version),
 		autosdk.New(m.logger),
-		chi.New(m.logger),
+		chi.New(m.logger, m.version),
 	}
 
 	if m.globalImpl {
