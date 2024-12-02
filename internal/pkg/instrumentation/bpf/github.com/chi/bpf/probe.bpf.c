@@ -127,7 +127,6 @@ int uprobe_chi_Mux_routeHTTP_Returns(struct pt_regs *ctx) {
     // Get method from request
     if (!get_go_string_from_user_ptr((void *)(req_ptr + method_ptr_pos), http_request->method, sizeof(http_request->method))) {
         bpf_printk("failed to get method from request");
-        return 0;
     }
 
     // get path from Request.URL
@@ -135,7 +134,6 @@ int uprobe_chi_Mux_routeHTTP_Returns(struct pt_regs *ctx) {
     bpf_probe_read(&url_ptr, sizeof(url_ptr), (void *)(req_ptr + url_ptr_pos));
     if (!get_go_string_from_user_ptr((void *)(url_ptr + path_ptr_pos), http_request->path, sizeof(http_request->path))) {
         bpf_printk("failed to get path from Request.URL");
-        return 0;
     }
 
     // get pathPattern
@@ -145,7 +143,6 @@ int uprobe_chi_Mux_routeHTTP_Returns(struct pt_regs *ctx) {
     bpf_probe_read(&val_ptr, sizeof(val_ptr), (void *)(ctx_ptr + val_ptr_pos));
     if (!get_go_string_from_user_ptr((void *)(val_ptr + rp_str_pos), http_request->path_pattern, sizeof(http_request->path_pattern))) {
         bpf_printk("failed to get path_pattern from chi context");
-        return 0;
     }
 
     bpf_map_update_elem(&http_events, &key, uprobe_data, 0);
