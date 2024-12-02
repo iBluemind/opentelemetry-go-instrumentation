@@ -136,11 +136,13 @@ int uprobe_chi_Mux_routeHTTP_Returns(struct pt_regs *ctx) {
         bpf_printk("failed to get path from Request.URL");
     }
 
-    // get pathPattern
+    // get Request.ctx
     void *ctx_ptr = 0;
     bpf_probe_read(&ctx_ptr, sizeof(ctx_ptr), (void *)(req_ptr + ctx_ptr_pos));
+    // get valueCtx.val
     void *val_ptr = 0;
     bpf_probe_read(&val_ptr, sizeof(val_ptr), (void *)(ctx_ptr + val_ptr_pos));
+    // get Context.routePattern
     if (!get_go_string_from_user_ptr((void *)(val_ptr + rp_str_pos), http_request->path_pattern, sizeof(http_request->path_pattern))) {
         bpf_printk("failed to get path_pattern from chi context");
     }

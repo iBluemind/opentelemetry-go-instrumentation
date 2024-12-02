@@ -75,11 +75,6 @@ func New(logger *slog.Logger, version string) probe.Probe {
 			},
 			Uprobes: []probe.Uprobe{
 				{
-					Sym:         "github.com/go-chi/chi/v5.(*Mux).routeHTTP",
-					EntryProbe:  "uprobe_chi_Mux_routeHTTP",
-					ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
-				},
-				{
 					Sym:         "net/http.HandlerFunc.ServeHTTP",
 					EntryProbe:  "uprobe_chi_Mux_routeHTTP",
 					ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
