@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
-	"go.opentelemetry.io/auto/sdk/telemetry"
+	"go.opentelemetry.io/auto/sdk/internal/telemetry"
 )
 
 var (

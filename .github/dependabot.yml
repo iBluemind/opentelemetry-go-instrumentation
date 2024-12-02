@@ -254,7 +254,7 @@ updates:
       interval: weekly
       day: sunday
   - package-ecosystem: gomod
-    directory: /sdk/telemetry/test
+    directory: /sdk/internal/telemetry/test
     labels:
       - dependencies
       - go

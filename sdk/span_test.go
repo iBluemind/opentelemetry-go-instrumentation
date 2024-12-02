@@ -7,7 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 
-	"go.opentelemetry.io/auto/sdk/telemetry"
+	"go.opentelemetry.io/auto/sdk/internal/telemetry"
 )
 
 var (
@@ -111,7 +112,7 @@ func TestSpanCreation(t *testing.T) {
 
 	ts := time.Now()
 
-	tracer := GetTracerProvider().Tracer(
+	tracer := TracerProvider().Tracer(
 		tracerName,
 		trace.WithInstrumentationVersion(tracerVer),
 		trace.WithSchemaURL(semconv.SchemaURL),
@@ -144,7 +145,7 @@ func TestSpanCreation(t *testing.T) {
 			Eval: func(t *testing.T, _ context.Context, s *span) {
 				assertTracer(s.traces)
 
-				assert.True(t, s.sampled, "not sampled by default.")
+				assert.True(t, s.sampled.Load(), "not sampled by default.")
 			},
 		},
 		{
@@ -195,7 +196,7 @@ func TestSpanCreation(t *testing.T) {
 				}
 			},
 			Eval: func(t *testing.T, _ context.Context, s *span) {
-				assert.False(t, s.sampled, "sampled")
+				assert.False(t, s.sampled.Load(), "sampled")
 			},
 		},
 		{
@@ -265,24 +266,6 @@ func TestSpanCreation(t *testing.T) {
 	}
 }
 
-func TestSpanKindTransform(t *testing.T) {
-	tests := map[trace.SpanKind]telemetry.SpanKind{
-		trace.SpanKind(-1):          telemetry.SpanKind(0),
-		trace.SpanKindUnspecified:   telemetry.SpanKind(0),
-		trace.SpanKind(math.MaxInt): telemetry.SpanKind(0),
-
-		trace.SpanKindInternal: telemetry.SpanKindInternal,
-		trace.SpanKindServer:   telemetry.SpanKindServer,
-		trace.SpanKindClient:   telemetry.SpanKindClient,
-		trace.SpanKindProducer: telemetry.SpanKindProducer,
-		trace.SpanKindConsumer: telemetry.SpanKindConsumer,
-	}
-
-	for in, want := range tests {
-		assert.Equal(t, want, spanKind(in), in.String())
-	}
-}
-
 func TestSpanEnd(t *testing.T) {
 	orig := ended
 	t.Cleanup(func() { ended = orig })
@@ -319,7 +302,7 @@ func TestSpanEnd(t *testing.T) {
 			s := spanBuilder{}.Build()
 			s.End(test.Options...)
 
-			assert.False(t, s.sampled, "ended span should not be sampled")
+			assert.False(t, s.sampled.Load(), "ended span should not be sampled")
 			require.NotNil(t, buf, "no span data emitted")
 
 			var traces telemetry.Traces
@@ -477,7 +460,7 @@ func TestSpanTracerProvider(t *testing.T) {
 	var s span
 
 	got := s.TracerProvider()
-	assert.IsType(t, tracerProvider{}, got)
+	assert.IsType(t, &tracerProvider{}, got)
 }
 
 type spanBuilder struct {
@@ -489,9 +472,9 @@ type spanBuilder struct {
 
 func (b spanBuilder) Build() *span {
 	tracer := new(tracer)
-	s := &span{sampled: !b.NotSampled, spanContext: b.SpanContext}
+	s := &span{spanContext: b.SpanContext}
+	s.sampled.Store(!b.NotSampled)
 	s.traces, s.span = tracer.traces(
-		context.Background(),
 		b.Name,
 		trace.NewSpanStartConfig(b.Options...),
 		s.spanContext,
@@ -499,4 +482,93 @@ func (b spanBuilder) Build() *span {
 	)
 
 	return s
+}
+
+func TestSpanConcurrentSafe(t *testing.T) {
+	t.Parallel()
+
+	const (
+		nTracers   = 2
+		nSpans     = 2
+		nGoroutine = 10
+	)
+
+	runSpan := func(s trace.Span) <-chan struct{} {
+		done := make(chan struct{})
+		go func(span trace.Span) {
+			defer close(done)
+
+			var wg sync.WaitGroup
+			for i := 0; i < nGoroutine; i++ {
+				wg.Add(1)
+				go func(n int) {
+					defer wg.Done()
+
+					_ = s.IsRecording()
+					_ = s.SpanContext()
+					_ = s.TracerProvider()
+
+					s.AddEvent("event")
+					s.AddLink(trace.Link{})
+					s.RecordError(errors.New("err"))
+					s.SetStatus(codes.Error, "error")
+					s.SetName("span" + strconv.Itoa(n))
+					s.SetAttributes(attribute.Bool("key", true))
+
+					s.End()
+				}(i)
+			}
+
+			wg.Wait()
+		}(s)
+		return done
+	}
+
+	runTracer := func(tr trace.Tracer) <-chan struct{} {
+		done := make(chan struct{})
+		go func(tracer trace.Tracer) {
+			defer close(done)
+
+			ctx := context.Background()
+
+			var wg sync.WaitGroup
+			for i := 0; i < nSpans; i++ {
+				wg.Add(1)
+				go func(n int) {
+					defer wg.Done()
+					_, s := tracer.Start(ctx, "span"+strconv.Itoa(n))
+					<-runSpan(s)
+				}(i)
+			}
+
+			wg.Wait()
+		}(tr)
+		return done
+	}
+
+	run := func(tp trace.TracerProvider) <-chan struct{} {
+		done := make(chan struct{})
+		go func(provider trace.TracerProvider) {
+			defer close(done)
+
+			var wg sync.WaitGroup
+			for i := 0; i < nTracers; i++ {
+				wg.Add(1)
+				go func(n int) {
+					defer wg.Done()
+					<-runTracer(provider.Tracer("tracer" + strconv.Itoa(n)))
+				}(i)
+			}
+
+			wg.Wait()
+		}(tp)
+		return done
+	}
+
+	assert.NotPanics(t, func() {
+		done0, done1 := run(TracerProvider()), run(TracerProvider())
+
+		<-done0
+		<-done1
+	})
 }

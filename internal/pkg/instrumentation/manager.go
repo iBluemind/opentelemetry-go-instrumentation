@@ -42,37 +42,39 @@ var (
 type managerState int
 
 const (
-	managerStateRunning managerState = iota
+	managerStateUninitialized managerState = iota
+	managerStateLoaded
+	managerStateRunning
 	managerStateStopped
 )
 
 // Manager handles the management of [probe.Probe] instances.
 type Manager struct {
 	logger          *slog.Logger
+	version         string
 	probes          map[probe.ID]probe.Probe
 	otelController  *opentelemetry.Controller
 	globalImpl      bool
-	loadedIndicator chan struct{}
 	cp              ConfigProvider
 	exe             *link.Executable
 	td              *process.TargetDetails
+	stop            context.CancelCauseFunc
 	runningProbesWG sync.WaitGroup
-	eventCh         chan *probe.Event
 	currentConfig   Config
 	probeMu         sync.Mutex
 	state           managerState
+	stateMu         sync.RWMutex
 }
 
 // NewManager returns a new [Manager].
-func NewManager(logger *slog.Logger, otelController *opentelemetry.Controller, globalImpl bool, loadIndicator chan struct{}, cp ConfigProvider) (*Manager, error) {
+func NewManager(logger *slog.Logger, otelController *opentelemetry.Controller, globalImpl bool, cp ConfigProvider, version string) (*Manager, error) {
 	m := &Manager{
-		logger:          logger,
-		probes:          make(map[probe.ID]probe.Probe),
-		otelController:  otelController,
-		globalImpl:      globalImpl,
-		loadedIndicator: loadIndicator,
-		cp:              cp,
-		eventCh:         make(chan *probe.Event),
+		logger:         logger,
+		version:        version,
+		probes:         make(map[probe.ID]probe.Probe),
+		otelController: otelController,
+		globalImpl:     globalImpl,
+		cp:             cp,
 	}
 
 	err := m.registerProbes()
@@ -225,7 +227,7 @@ func (m *Manager) runProbe(p probe.Probe) {
 	m.runningProbesWG.Add(1)
 	go func(ap probe.Probe) {
 		defer m.runningProbesWG.Done()
-		ap.Run(m.eventCh)
+		ap.Run(m.otelController.Trace)
 	}(p)
 }
 
@@ -249,20 +251,41 @@ func (m *Manager) ConfigLoop(ctx context.Context) {
 	}
 }
 
-// Run runs the event processing loop for all managed probes.
-func (m *Manager) Run(ctx context.Context, target *process.TargetDetails) error {
+func (m *Manager) Load(ctx context.Context, target *process.TargetDetails) error {
 	if len(m.probes) == 0 {
 		return errors.New("no instrumentation for target process")
 	}
 	if m.cp == nil {
 		return errors.New("no config provider set")
 	}
+	if target == nil {
+		return errors.New("target details not set - load is called on non-initialized instrumentation")
+	}
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+
+	if m.state == managerStateRunning {
+		return errors.New("manager is already running, load is not allowed")
+	}
 
 	m.currentConfig = m.cp.InitialConfig(ctx)
-
-	err := m.load(target)
+	err := m.loadProbes(target)
 	if err != nil {
 		return err
+	}
+
+	m.td = target
+	m.state = managerStateLoaded
+
+	return nil
+}
+
+func (m *Manager) runProbes(ctx context.Context) (context.Context, error) {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+
+	if m.state != managerStateLoaded {
+		return nil, errors.New("manager is not loaded, call Load before Run")
 	}
 
 	for id, p := range m.probes {
@@ -271,35 +294,66 @@ func (m *Manager) Run(ctx context.Context, target *process.TargetDetails) error 
 		}
 	}
 
-	if m.loadedIndicator != nil {
-		close(m.loadedIndicator)
-	}
+	ctx, stop := context.WithCancelCause(ctx)
+	m.stop = stop
 	m.state = managerStateRunning
+	return ctx, nil
+}
+
+// Run runs the event processing loop for all managed probes.
+func (m *Manager) Run(ctx context.Context) error {
+	ctx, err := m.runProbes(ctx)
+	if err != nil {
+		return err
+	}
 
 	go m.ConfigLoop(ctx)
 
-	for {
-		select {
-		case <-ctx.Done():
-			m.probeMu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		defer close(done)
+		<-ctx.Done()
 
-			m.logger.Debug("Shutting down all probes")
-			err := m.cleanup(target)
-
-			// Wait for all probes to stop before closing the chan they send on.
-			m.runningProbesWG.Wait()
-			close(m.eventCh)
-
-			m.state = managerStateStopped
-			m.probeMu.Unlock()
-			return errors.Join(err, ctx.Err())
-		case e := <-m.eventCh:
-			m.otelController.Trace(e)
+		err := m.Stop()
+		if e := context.Cause(ctx); !errors.Is(e, errStop) {
+			err = errors.Join(err, e)
 		}
-	}
+		done <- err
+	}()
+
+	return <-done
 }
 
-func (m *Manager) load(target *process.TargetDetails) error {
+var errStop = errors.New("stopped called")
+
+// Stop stops all probes and cleans up all the resources associated with them.
+func (m *Manager) Stop() error {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+
+	currentState := m.state
+	if currentState == managerStateUninitialized || currentState == managerStateStopped {
+		return nil
+	}
+
+	if currentState == managerStateRunning {
+		m.stop(errStop)
+	}
+
+	m.probeMu.Lock()
+	defer m.probeMu.Unlock()
+
+	m.logger.Debug("Shutting down all probes")
+	err := m.cleanup(m.td)
+
+	// Wait for all probes to stop.
+	m.runningProbesWG.Wait()
+
+	m.state = managerStateStopped
+	return err
+}
+
+func (m *Manager) loadProbes(target *process.TargetDetails) error {
 	// Remove resource limits for kernels <5.11.
 	if err := rlimitRemoveMemlock(); err != nil {
 		return err
@@ -310,10 +364,6 @@ func (m *Manager) load(target *process.TargetDetails) error {
 		return err
 	}
 	m.exe = exe
-
-	if m.td == nil {
-		m.td = target
-	}
 
 	if err := m.mount(target); err != nil {
 		return err
@@ -361,36 +411,31 @@ func (m *Manager) cleanup(target *process.TargetDetails) error {
 	return errors.Join(err, bpffsCleanup(target))
 }
 
-//nolint:revive // ignoring linter complaint about control flag
-func availableProbes(l *slog.Logger, withTraceGlobal bool) []probe.Probe {
-	insts := []probe.Probe{
-		grpcClient.New(l),
-		grpcServer.New(l),
-		httpServer.New(l),
-		httpClient.New(l),
-		dbSql.New(l),
-		kafkaProducer.New(l),
-		kafkaConsumer.New(l),
-		autosdk.New(l),
-		chi.New(l),
+func (m *Manager) availableProbes() []probe.Probe {
+	p := []probe.Probe{
+		grpcClient.New(m.logger, m.version),
+		grpcServer.New(m.logger, m.version),
+		httpServer.New(m.logger, m.version),
+		httpClient.New(m.logger, m.version),
+		dbSql.New(m.logger, m.version),
+		kafkaProducer.New(m.logger, m.version),
+		kafkaConsumer.New(m.logger, m.version),
+		autosdk.New(m.logger),
+		chi.New(m.logger),
 	}
 
-	if withTraceGlobal {
-		insts = append(insts, otelTraceGlobal.New(l))
+	if m.globalImpl {
+		p = append(p, otelTraceGlobal.New(m.logger))
 	}
 
-	return insts
+	return p
 }
 
 func (m *Manager) registerProbes() error {
-	insts := availableProbes(m.logger, m.globalImpl)
-
-	for _, i := range insts {
-		err := m.registerProbe(i)
-		if err != nil {
+	for _, p := range m.availableProbes() {
+		if err := m.registerProbe(p); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }

@@ -6,9 +6,12 @@ package inspect
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/hashicorp/go-version"
@@ -114,7 +118,23 @@ func (b *builder) pullImage(ctx context.Context) error {
 		return nil
 	}
 
-	rc, err := b.cli.ImagePull(ctx, b.GoImage, image.PullOptions{})
+	pullOpts := image.PullOptions{}
+	username := os.Getenv("DOCKER_USERNAME")
+	password := os.Getenv("DOCKER_PASSWORD")
+	if len(username) > 0 && len(password) > 0 {
+		authConfig := registry.AuthConfig{
+			Username: username,
+			Password: password,
+		}
+		encodedJSON, err := json.Marshal(authConfig)
+		if err != nil {
+			panic(err)
+		}
+		authStr := base64.URLEncoding.EncodeToString(encodedJSON)
+		pullOpts.RegistryAuth = authStr
+	}
+
+	rc, err := b.cli.ImagePull(ctx, b.GoImage, pullOpts)
 	if err != nil {
 		return err
 	}
