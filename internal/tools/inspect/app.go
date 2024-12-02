@@ -12,7 +12,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"time"
 
 	"github.com/hashicorp/go-version"
 
@@ -32,11 +31,6 @@ type app struct {
 	data   *dwarf.Data
 }
 
-const (
-	containerDir = "/workdir"
-	hostDir      = "/Users/manjong/Documents/sources/opentelemetry-go-instrumentation"
-)
-
 // newApp builds and returns a new app.
 //
 // The new app is built in a temp directory. It is up to the caller to ensure
@@ -52,11 +46,7 @@ func newApp(ctx context.Context, l *slog.Logger, j job) (*app, error) {
 	}
 
 	var err error
-
-	timestamp := time.Now().UnixNano()
-	a.tmpDir = containerDir + "/inspect-" + fmt.Sprintf("%d", timestamp)
-
-	err = os.Mkdir(a.tmpDir, os.ModePerm)
+	a.tmpDir, err = os.MkdirTemp("", "inspect-*")
 	if err != nil {
 		return nil, err
 	}

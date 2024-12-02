@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -94,8 +93,7 @@ func (b *builder) runCmd(ctx context.Context, cmd []string, dir string) error {
 		return err
 	}
 
-	newDir := strings.Replace(dir, containerDir, hostDir, 1)
-	id, err := b.createContainer(ctx, cmd, newDir)
+	id, err := b.createContainer(ctx, cmd, dir)
 	if err != nil {
 		return err
 	}
