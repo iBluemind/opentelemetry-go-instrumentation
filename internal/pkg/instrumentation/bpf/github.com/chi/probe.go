@@ -15,11 +15,12 @@
 package chi
 
 import (
+	"fmt"
 	"go.opentelemetry.io/auto/internal/pkg/instrumentation/utils"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 	"log/slog"
@@ -49,35 +50,23 @@ func New(logger *slog.Logger, version string) probe.Probe {
 			Consts: []probe.Const{
 				probe.RegistersABIConst{},
 				probe.StructFieldConst{
-					Key: "method_ptr_pos",
-					Val: structfield.NewID("std", "net/http", "Request", "Method"),
-				},
-				probe.StructFieldConst{
-					Key: "url_ptr_pos",
-					Val: structfield.NewID("std", "net/http", "Request", "URL"),
-				},
-				probe.StructFieldConst{
-					Key: "ctx_ptr_pos",
-					Val: structfield.NewID("std", "net/http", "Request", "ctx"),
-				},
-				probe.StructFieldConst{
-					Key: "path_ptr_pos",
-					Val: structfield.NewID("std", "net/url", "URL", "Path"),
-				},
-				probe.StructFieldConst{
-					Key: "val_ptr_pos",
-					Val: structfield.NewID("std", "context", "valueCtx", "val"),
+					Key: "pctx_ptr_pos",
+					Val: structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "parentCtx"),
 				},
 				probe.StructFieldConst{
 					Key: "rp_str_pos",
 					Val: structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "routePattern"),
 				},
+				probe.StructFieldConst{
+					Key: "method_str_pos",
+					Val: structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "RouteMethod"),
+				},
 			},
 			Uprobes: []probe.Uprobe{
 				{
-					Sym:         "net/http.HandlerFunc.ServeHTTP",
-					EntryProbe:  "uprobe_chi_Mux_routeHTTP",
-					ReturnProbe: "uprobe_chi_Mux_routeHTTP_Returns",
+					Sym:         "github.com/go-chi/chi/v5.(*node).FindRoute",
+					EntryProbe:  "uprobe_chi_node_FindRoute",
+					ReturnProbe: "uprobe_chi_node_FindRoute_Returns",
 				},
 			},
 			SpecFn: loadBpf,
@@ -113,7 +102,7 @@ func processFn(e *event) ptrace.SpanSlice {
 
 	spans := ptrace.NewSpanSlice()
 	span := spans.AppendEmpty()
-	span.SetName(method)
+	span.SetName(fmt.Sprintf("%s %s", method, patternPath))
 	span.SetKind(ptrace.SpanKindServer)
 	span.SetStartTimestamp(utils.BootOffsetToTimestamp(e.StartTime))
 	span.SetEndTimestamp(utils.BootOffsetToTimestamp(e.EndTime))

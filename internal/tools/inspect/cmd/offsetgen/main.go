@@ -134,15 +134,6 @@ func manifests() ([]inspect.Manifest, error) {
 		},
 		{
 			Application: inspect.Application{
-				Renderer:  ren("templates/context/*.tmpl"),
-				GoVerions: goVers,
-			},
-			StructFields: []structfield.ID{
-				structfield.NewID("std", "context", "valueCtx", "val"),
-			},
-		},
-		{
-			Application: inspect.Application{
 				Renderer: ren("templates/google.golang.org/grpc/*.tmpl"),
 				Versions: grpcVers,
 			},
@@ -210,7 +201,9 @@ func manifests() ([]inspect.Manifest, error) {
 				Versions: chiVers,
 			},
 			StructFields: []structfield.ID{
+				structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "parentCtx"),
 				structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "routePattern"),
+				structfield.NewID("github.com/go-chi/chi/v5", "github.com/go-chi/chi/v5", "Context", "RouteMethod"),
 			},
 		},
 	}, nil

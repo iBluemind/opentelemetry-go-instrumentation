@@ -75,8 +75,8 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
-	UprobeChiMuxRouteHTTP         *ebpf.ProgramSpec `ebpf:"uprobe_chi_Mux_routeHTTP"`
-	UprobeChiMuxRouteHTTP_Returns *ebpf.ProgramSpec `ebpf:"uprobe_chi_Mux_routeHTTP_Returns"`
+	UprobeChiMuxRouteHTTP         *ebpf.ProgramSpec `ebpf:"uprobe_chi_node_FindRoute"`
+	UprobeChiMuxRouteHTTP_Returns *ebpf.ProgramSpec `ebpf:"uprobe_chi_node_FindRoute_Returns"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
@@ -142,8 +142,8 @@ func (m *bpfMaps) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
-	UprobeChiMuxRouteHTTP         *ebpf.Program `ebpf:"uprobe_chi_Mux_routeHTTP"`
-	UprobeChiMuxRouteHTTP_Returns *ebpf.Program `ebpf:"uprobe_chi_Mux_routeHTTP_Returns"`
+	UprobeChiMuxRouteHTTP         *ebpf.Program `ebpf:"uprobe_chi_node_FindRoute"`
+	UprobeChiMuxRouteHTTP_Returns *ebpf.Program `ebpf:"uprobe_chi_node_FindRoute_Returns"`
 }
 
 func (p *bpfPrograms) Close() error {

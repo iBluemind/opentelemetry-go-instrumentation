@@ -36,7 +36,7 @@ struct http_request_t {
 struct uprobe_data_t
 {
     struct http_request_t req;
-    u64 req_ptr;
+    u64 rctx_ptr;
 };
 
 struct {
@@ -55,22 +55,19 @@ struct
 } chi_uprobe_storage_map SEC(".maps");
 
 // Injected in init
-volatile const u64 method_ptr_pos;
-volatile const u64 url_ptr_pos;
-volatile const u64 path_ptr_pos;
-volatile const u64 ctx_ptr_pos;
-volatile const u64 val_ptr_pos;
+volatile const u64 pctx_ptr_pos;
 volatile const u64 rp_str_pos;
+volatile const u64 method_str_pos;
 
 // This instrumentation attaches uprobe to the following function:
 // func (mx *Mux) routeHTTP(w http.ResponseWriter, r *http.Request)
-SEC("uprobe/chi_Mux_routeHTTP")
-int uprobe_chi_Mux_routeHTTP(struct pt_regs *ctx) {
-    u64 req_pos = 4;
-    void *req_ptr = get_argument(ctx, req_pos);
+SEC("uprobe/chi_node_FindRoute")
+int uprobe_chi_node_FindRoute(struct pt_regs *ctx) {
+    u64 rctx_pos = 2;
+    void *rctx_ptr = get_argument(ctx, rctx_pos);
 
     struct go_iface go_context = {0};
-    get_Go_context(ctx, req_pos, ctx_ptr_pos, false, &go_context);
+    get_Go_context(ctx, rctx_pos, pctx_ptr_pos, false, &go_context);
 
     void *key = get_consistent_key(ctx, go_context.data);
 
@@ -78,14 +75,14 @@ int uprobe_chi_Mux_routeHTTP(struct pt_regs *ctx) {
     struct uprobe_data_t *uprobe_data = bpf_map_lookup_elem(&chi_uprobe_storage_map, &map_id);
     if (uprobe_data == NULL)
     {
-        bpf_printk("uprobe/chi_Mux_routeHTTP: http_server_span is NULL");
+        bpf_printk("uprobe/chi_node_FindRoute: http_server_span is NULL");
         return 0;
     }
 
     __builtin_memset(uprobe_data, 0, sizeof(struct uprobe_data_t));
 
     // Save Request
-    uprobe_data->req_ptr = (u64)req_ptr;
+    uprobe_data->rctx_ptr = (u64)rctx_ptr;
 
     struct http_request_t *http_request = &uprobe_data->req;
     http_request->start_time = bpf_ktime_get_ns();
@@ -100,51 +97,45 @@ int uprobe_chi_Mux_routeHTTP(struct pt_regs *ctx) {
     };
     start_span(&start_span_params);
 
+    // get path from 3rd arg
+    void *path_str_ptr = get_argument(ctx, 4);
+    u64 path_str_len = (u64)get_argument(ctx, 5);
+    const u64 path_str_size = sizeof(http_request->path) < path_str_len ? sizeof(http_request->path) : path_str_len;
+    bpf_probe_read(http_request->path, path_str_size, path_str_ptr);
+
     bpf_map_update_elem(&http_events, &key, uprobe_data, 0);
     start_tracking_span(go_context.data, &http_request->sc);
     return 0;
 }
 
-SEC("uprobe/chi_Mux_routeHTTP")
-int uprobe_chi_Mux_routeHTTP_Returns(struct pt_regs *ctx) {
+SEC("uprobe/chi_node_FindRoute")
+int uprobe_chi_node_FindRoute_Returns(struct pt_regs *ctx) {
+    u64 end_time = bpf_ktime_get_ns();
+
     struct go_iface go_context = {0};
-    get_Go_context(ctx, 4, ctx_ptr_pos, false, &go_context);
+    get_Go_context(ctx, 2, pctx_ptr_pos, false, &go_context);
 
     void *key = get_consistent_key(ctx, go_context.data);
 
     struct uprobe_data_t *uprobe_data = bpf_map_lookup_elem(&http_events, &key);
     if (uprobe_data == NULL) {
-        bpf_printk("uprobe/chi_Mux_routeHTTP: entry_state is NULL");
+        bpf_printk("uprobe/chi_node_FindRoute: entry_state is NULL");
         return 0;
     }
 
     struct http_request_t *http_request = &uprobe_data->req;
+    http_request->end_time = end_time;
 
-    http_request->end_time = bpf_ktime_get_ns();
+    void *rctx_ptr = (void *)uprobe_data->rctx_ptr;
 
-    void *req_ptr = (void *)uprobe_data->req_ptr;
-
-    // Get method from request
-    if (!get_go_string_from_user_ptr((void *)(req_ptr + method_ptr_pos), http_request->method, sizeof(http_request->method))) {
-        bpf_printk("failed to get method from request");
+    // Get method from rctx
+    if (!get_go_string_from_user_ptr((void *)(rctx_ptr + method_str_pos), http_request->method, sizeof(http_request->method))) {
+        bpf_printk("failed to get method from rctx");
     }
 
-    // get path from Request.URL
-    void *url_ptr = 0;
-    bpf_probe_read(&url_ptr, sizeof(url_ptr), (void *)(req_ptr + url_ptr_pos));
-    if (!get_go_string_from_user_ptr((void *)(url_ptr + path_ptr_pos), http_request->path, sizeof(http_request->path))) {
-        bpf_printk("failed to get path from Request.URL");
-    }
-
-    // get Request.ctx
-    void *ctx_ptr = 0;
-    bpf_probe_read(&ctx_ptr, sizeof(ctx_ptr), (void *)(req_ptr + ctx_ptr_pos));
-    // get valueCtx.val
-    void *val_ptr = 0;
-    bpf_probe_read(&val_ptr, sizeof(val_ptr), (void *)(ctx_ptr + val_ptr_pos));
-    // get Context.routePattern
-    if (!get_go_string_from_user_ptr((void *)(val_ptr + rp_str_pos), http_request->path_pattern, sizeof(http_request->path_pattern))) {
-        bpf_printk("failed to get path_pattern from chi context");
+    // get rctx.routePattern
+    if (!get_go_string_from_user_ptr((void *)(rctx_ptr + rp_str_pos), http_request->path_pattern, sizeof(http_request->path_pattern))) {
+        bpf_printk("failed to get path_pattern from rctx");
     }
 
     bpf_map_update_elem(&http_events, &key, uprobe_data, 0);
